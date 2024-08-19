@@ -8,7 +8,7 @@ Sou um estudante de Sistemas de Informação no 4° período com desejo em criar
 ### [Projeto 1: O Apito: Sistema de contratação de árbitros especializados](link_para_pasta)
 **Resumo:** Aplicação Web com a função de ajudar na contratação de árbitros especializados para eventos futebolísticos de nível amador a profíssional (Protótipo inicial feito no figma e aplicação Web feita com Bootstrap).
 
-### [Projeto 2: TurismoES]([link_para_pasta](https://www.figma.com/proto/rxB2PssTipei8FmjhY6n1C/TurismoES?node-id=0-1&t=ORu0YZl5sV3kQ5dK-1))
+### [Projeto 2: TurismoES]([(https://www.figma.com/proto/rxB2PssTipei8FmjhY6n1C/TurismoES?node-id=0-1&t=ORu0YZl5sV3kQ5dK-1)])
 **Resumo:** Protótipo de aplicativo móvel de turísmo com foco em incentivar o turismo local do ES e pequenos coméricios do Estado, o aplicativo oferece um sistema de conquistas e recompensas de acordo com a quantidade de locais visitados(Protótipo desenvolvido em FIGMA).
 
 ### [Projeto 3: MateMagicas]()
