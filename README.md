@@ -9,6 +9,7 @@ Sou um estudante de Sistemas de Informação no 4° período com desejo em criar
 **Resumo:** Aplicação Web com a função de ajudar na contratação de árbitros especializados para eventos futebolísticos de nível amador a profíssional (Protótipo inicial feito no figma e aplicação Web feita com Bootstrap).
 
 >Link do protótipo em FIGMA: https://www.figma.com/proto/HGesw9SWTtW03lYhX6zruG/Untitled?t=n9lvH0vjoAUvbVKx-1&scaling=min-zoom&content-scaling=fixed&page-id=0%3A1&node-id=1-327
+>
 >Link da aplicação Web: https://landing-page-oapito.vercel.app/ (Login: admin ; Senha: Admin123)
 
 ### [Projeto 2: TurismoES]
