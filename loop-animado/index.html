@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loop: estudo → recompensa</title>
+<style>
+  @font-face {
+    font-family: "PS2P";
+    src: url("assets/press-start-2p-latin-400-normal.woff2") format("woff2");
+  }
+  html, body { margin: 0; height: 100%; background: #05060d; }
+  body { display: grid; place-items: center; }
+  canvas { width: min(100vw, 100vh); height: min(100vw, 100vh); image-rendering: pixelated; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+/* Loop "pressão → alívio". Tudo é função pura do tempo t (s), então o mesmo
+   código toca ao vivo e exporta quadro a quadro (window.renderAt). */
+const W = 1080, H = 1080, T = 16, NF = 12, FW = 353, FH = 349;
+const TR = 8.5;                      // instante da virada (alívio)
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+const sc = mk(), scx = sc.getContext('2d');     // cena (com motion blur)
+const tmp = mk(), tx = tmp.getContext('2d');    // amostra do blur
+[ctx, scx, tx].forEach(g => g.imageSmoothingEnabled = false);
+const sheet = new Image(); sheet.src = 'assets/orbita-sheet.png';
+
+/* ---------- utilidades ---------- */
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const smooth = k => k * k * (3 - 2 * k);
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const outBack = k => { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+const mod = (a, n) => ((a % n) + n) % n;
+function track(keys, t, eased) {       // interpolação por keyframes [t, v]
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    if (t <= keys[i][0]) {
+      const [t0, v0] = keys[i - 1], [t1, v1] = keys[i];
+      let k = (t - t0) / (t1 - t0);
+      if (eased) {
+        const flatPrev = i < 2 || keys[i - 2][1] === v0, flatNext = i + 1 >= keys.length || keys[i + 1][1] === v1;
+        if (flatPrev && flatNext) k = smooth(k);
+        else if (flatPrev) k = k * k * (2 - k) * 0.5 + k * 0.5;
+        else if (flatNext) k = 1 - (1 - k) * (1 - k) * (1 + k) * 0.5 - (1 - k) * 0.5;
+      }
+      return lerp(v0, v1, k);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+
+/* ---------- linha do tempo ---------- */
+// posição na órbita (0..12 = 360°): parado cansado → giro → sucesso → volta
+const ORBIT = [[0,0],[3.4,0],[4.7,1],[5.4,2],[6.0,3],[6.6,4],[7.1,5],[7.6,6],[8.05,7],[8.6,8],
+               [10.0,8],[10.7,9],[11.6,9],[12.3,10],[13.0,10],[13.7,11],[15.25,11],[16,12]];
+const PRESS  = [[0,.18],[3.4,.72],[6.6,1],[7.4,.9],[8.45,.0],[15.3,0],[16,.18]];
+const RELIEF = [[0,0],[6.6,0],[8.0,.25],[8.6,1],[15.0,1],[15.8,0],[16,0]];
+const orbit = t => track(ORBIT, t, true);
+const P = t => track(PRESS, mod(t, T));
+const R = t => track(RELIEF, mod(t, T));
+
+// fase cardíaca acumulada (ritmo sobe com a pressão)
+const DT = 1 / 120, PHASE = [0];
+for (let i = 1; i <= T / DT; i++) PHASE.push(PHASE[i - 1] + (0.85 + 2.5 * P(i * DT)) * DT);
+const PHASE_T = Math.ceil(PHASE[PHASE.length - 1]);            // fecha o loop em nº inteiro de batidas
+const phase = t => { const u = mod(t, T) / DT, i = Math.floor(u); return lerp(PHASE[i], PHASE[Math.min(i + 1, PHASE.length - 1)], u - i) * PHASE_T / PHASE[PHASE.length - 1]; };
+const beat = t => { const u = mod(phase(t), 1); return Math.exp(-9 * u) + 0.55 * Math.exp(-9 * mod(u - 0.28, 1)); };
+function ecg(u) {                      // um batimento, u em 0..1
+  u = mod(u, 1);
+  const g = (c, w) => Math.exp(-Math.pow((u - c) / w, 2));
+  return 0.12 * g(0.18, 0.04) - 0.18 * g(0.29, 0.012) + 1.0 * g(0.32, 0.014) - 0.3 * g(0.35, 0.013) + 0.22 * g(0.55, 0.06);
+}
+
+/* ---------- cena: órbita com motion blur ---------- */
+function drawPair(g, f, off) {
+  const i = Math.floor(f), e = f - i, D = W * 0.42;
+  const src = k => [mod(k, NF) * FW, 0, FW, FH];
+  g.globalAlpha = 1;
+  if (e < 0.001) { g.drawImage(sheet, ...src(i), off, 0, W, H); return; }
+  const k = smooth(e), xo = k * D + off, xi = -(1 - k) * D + off;
+  g.drawImage(sheet, ...src(i + 1), xi, 0, W, H);
+  g.drawImage(sheet, ...src(i), xo, 0, W, H);
+  g.globalAlpha = k;
+  g.drawImage(sheet, ...src(i + 1), xi, 0, W, H);
+  g.globalAlpha = 1;
+}
+function drawScene(t) {
+  const f = orbit(t), vel = (orbit(Math.min(T, t + 0.02)) - orbit(Math.max(0, t - 0.02))) / 0.04;
+  const blur = Math.min(70, Math.abs(vel) * 32), n = blur > 3 ? 9 : 1;
+  scx.globalAlpha = 1; scx.fillStyle = '#05060d'; scx.fillRect(0, 0, W, H);
+  for (let k = 0; k < n; k++) {
+    drawPair(tx, f, n > 1 ? (k / (n - 1) - 0.5) * blur : 0);
+    scx.globalAlpha = 1 / (k + 1);
+    scx.drawImage(tmp, 0, 0);
+  }
+  scx.globalAlpha = 1;
+  return { f, vel, blur };
+}
+
+/* ---------- HUD ---------- */
+const font = px => `${px}px "PS2P", monospace`;
+const ACC = { '\u0303': [[1,-2],[2,-3],[3,-3],[4,-2],[5,-2],[6,-3]], '\u0301': [[3,-2],[4,-3]], '\u0302': [[2,-2],[3,-3],[4,-3],[5,-2]] };
+function txt(s, x, y, px, align = 'left') {      // y = topo das maiúsculas; fonte monoespaçada (célula 8x8)
+  const u = px / 8, chars = [];
+  for (const ch of s.normalize('NFD')) ACC[ch] ? chars[chars.length - 1][1] = ACC[ch] : chars.push([ch, null]);
+  if (align !== 'left') x -= chars.length * px * (align === 'center' ? 0.5 : 1);
+  ctx.font = font(px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  chars.forEach(([ch, acc], i) => {
+    ctx.fillText(ch, x + i * px, y + 7 * u);
+    if (acc) acc.forEach(([ax, ay]) => ctx.fillRect(x + i * px + ax * u, y + ay * u, u, u));
+  });
+}
+function card(x, y, w, h, text, col, a, icon) {
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(8,9,20,.88)'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = col; ctx.fillRect(x, y, 8, h);
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  ctx.fillRect(x + 22, y + h / 2 - 15, 30, 30);
+  ctx.fillStyle = '#080914';
+  if (icon === 'ok') [[0,3],[1,4],[2,5],[3,4],[4,3],[5,2],[6,1]].forEach(([a, b]) => ctx.fillRect(x + 25 + a * 3.4, y + h / 2 - 12 + b * 3.4, 3.6, 7));
+  else txt(icon, x + 29, y + h / 2 - 8, 18);
+  ctx.fillStyle = '#f2f3ff'; txt(text, x + 66, y + h / 2 - 6, 15);
+  ctx.restore();
+}
+const STRESS = [[0.5,'PRAZO: AMANHÃ 23:59'],[1.2,'BUILD FALHOU · 3 ERROS'],[1.9,'PROVA EM 2 DIAS'],[2.5,'BUG #47 REABERTO'],
+                [3.0,'"CADÊ A ENTREGA?"'],[3.5,'SONO: 3H · CAFÉ: 0%'],[4.3,'12 TAREFAS ATRASADAS']];
+const WINS = [[9.1,'PROJETO ENTREGUE'],[9.7,'BUILD PASSOU'],[10.3,'DIPLOMA CONQUISTADO']];
+
+function drawStress(t, p) {
+  const w = 430, h = 60;
+  STRESS.forEach(([t0, text], i) => {
+    if (t < t0) return;
+    const k = clamp((t - t0) / 0.35), rel = t - (7.25 + i * 0.13);      // rel > 0: sendo soprado embora
+    let x = W - 40 - w + (1 - outBack(k)) * 520, y = 44 + i * (h + 12), a = 1, rot = 0;
+    const j = p * p * 5; x += (hash(i * 7 + Math.floor(t * 30)) - .5) * j; y += (hash(i * 13 + Math.floor(t * 30)) - .5) * j;
+    if (rel > 0) { x += rel * rel * 2600; y -= rel * 260 * (hash(i) - .2); rot = rel * (hash(i + 5) - .3) * 2.2; a = clamp(1 - rel / 0.55); }
+    if (a <= 0) return;
+    ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.rotate(rot);
+    const fresh = clamp(1 - (t - t0) / 0.5);
+    card(-w / 2, -h / 2, w, h, text, '#ff3b5c', a, '!');
+    if (fresh > 0) { ctx.globalAlpha = fresh * .6 * a; ctx.fillStyle = '#ff3b5c'; ctx.fillRect(-w / 2, -h / 2, w, h); }
+    ctx.restore();
+  });
+}
+function drawWins(t) {
+  WINS.forEach(([t0, text], i) => {
+    if (t < t0) return;
+    const k = clamp((t - t0) / 0.5), out = clamp((t - 14.6 - i * .08) / 0.4);
+    card(40 - (1 - outBack(k)) * 80, 44 + i * 68, 410, 54, text, '#ffd257', smooth(clamp(k * 2)) * (1 - out), 'ok');
+  });
+}
+function drawClock(t, p) {
+  const a = clamp(t / 0.5) * clamp((7.4 - t) / 0.5); if (a <= 0) return;
+  const mins = 107 + Math.floor(t * t * 3.2), hh = String(Math.floor(mins / 60) % 24).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
+  const clk = `${hh}${Math.floor(t * 2) % 2 ? ':' : ' '}${mm}`;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; txt(clk, 46, 52, 46);
+  ctx.fillStyle = p > .6 ? '#ff3b5c' : '#9fb4ff'; txt(clk, 42, 48, 46);
+  ctx.fillStyle = '#cfd6ff'; txt(`MADRUGADA ${1 + Math.floor(t * t * 2.7)}`, 44, 108, 15);
+  ctx.restore();
+}
+function caption(text, a, col) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  const w = text.length * 26 + 56;
+  ctx.fillStyle = 'rgba(5,6,13,.78)'; ctx.fillRect(W / 2 - w / 2, H - 254, w, 68);
+  ctx.fillStyle = col; txt(text, W / 2 + 2, H - 229, 26, 'center');
+  ctx.restore();
+}
+const win = (t, a, b, f = .35) => clamp((t - a) / f) * clamp((b - t) / f);
+
+function drawEcg(t) {
+  const x0 = 40, x1 = W - 40, y0 = H - 96, speed = 250, p = P(t), r = R(t);
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,6,13,.72)'; ctx.fillRect(0, H - 172, W, 172);
+  ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const pt = x => { const tau = t - (x1 - x) / speed, pp = P(tau); return [y0 - ecg(phase(tau)) * (16 + 46 * pp), pp, R(tau)]; };
+  for (let x = x0; x < x1; x += 4) {
+    const [ya, pa, ra] = pt(x), [yb] = pt(x + 4);
+    const red = pa > 0.02 && ra < 0.9;
+    ctx.strokeStyle = red ? `rgb(255,${Math.round(lerp(120, 50, pa))},${Math.round(lerp(120, 85, pa))})` : '#ffd257';
+    ctx.globalAlpha = 0.25 + 0.75 * (x - x0) / (x1 - x0);
+    ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.moveTo(x, ya); ctx.lineTo(x + 4, yb); ctx.stroke();
+  }
+  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  const relief = r > 0.5;
+  ctx.fillStyle = relief ? '#ffd257' : '#ff5f7a';
+  const pct = String(Math.round((relief ? r : p) * 100)).padStart(3, ' ');
+  txt(relief ? `ALÍVIO ${pct}%` : `PRESSÃO ${pct}%`, x0, H - 152, 18);
+  ctx.fillStyle = '#cfd6ff'; txt(`${Math.round((0.85 + 2.5 * p) * 60)} BPM`, x1, H - 152, 18, 'right');
+  ctx.restore();
+}
+
+/* ---------- quadro ---------- */
+function render(t) {
+  t = mod(t, T);
+  const p = P(t), r = R(t), b = beat(t), { blur } = drawScene(t);
+  const since = t - TR, tick = Math.floor(t * 30);
+
+  // câmera: aperta na pressão (zoom + tremor), respira no alívio
+  const breath = Math.sin(t * Math.PI * 0.5) * 0.006 * r;
+  const zoom = 1.085 + 0.2 * p * p + b * 0.012 * p + breath + Math.max(0, 0.06 * (1 - since / 0.5)) * (since > 0 ? 1 : 0);
+  const sh = 11 * p * p * p, sx = (hash(tick) - .5) * sh * 2, sy = (hash(tick + 99) - .5) * sh * 2;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(W / 2 + sx, H / 2 - 30 * p + sy); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -H / 2);
+  ctx.filter = `saturate(${(1 - 0.5 * p + 0.18 * r).toFixed(3)}) brightness(${(1 + 0.45 * p + 0.07 * r).toFixed(3)}) contrast(${(1 + 0.04 * p).toFixed(3)})`;
+  ctx.drawImage(sc, 0, 0);
+  ctx.filter = 'none';
+  // glitch: faixas rasgadas + fantasma vermelho quando a pressão passa de ~60%
+  const gl = clamp((p - 0.55) / 0.45);
+  if (gl > 0) {
+    const gt = Math.floor(t * 14);
+    for (let i = 0; i < 4; i++) {
+      if (hash(gt * 5 + i) > gl * 0.75) continue;
+      const y = hash(gt + i * 31) * H, h = 14 + hash(gt + i * 17) * 70, dx = (hash(gt + i * 3) - .5) * 150 * gl;
+      ctx.drawImage(sc, 0, y, W, h, dx, y, W, h);
+    }
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.16 * gl * (0.4 + b);
+    ctx.filter = 'saturate(0) brightness(1.4) sepia(1) hue-rotate(-50deg) saturate(6)';
+    ctx.drawImage(sc, 16 * gl * (0.5 + b), 0);
+    ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
+  // bloom quente no alívio
+  if (r > 0.02) {
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.42 * r; ctx.filter = 'blur(22px) brightness(1.25)';
+    ctx.drawImage(sc, 0, 0); ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
+
+  // raios de luz + brilho dourado
+  if (r > 0.02) {
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    const cx = W / 2, cy = -160;
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI / 2 + (i - 4) * 0.2 + Math.sin(t * 0.5 + i * 1.7) * 0.06, wd = 0.035 + hash(i) * 0.04;
+      const gr = ctx.createLinearGradient(cx, cy, cx + Math.cos(a) * 1300, cy + Math.sin(a) * 1300);
+      gr.addColorStop(0, `rgba(255,214,120,${0.26 * r})`); gr.addColorStop(1, 'rgba(255,214,120,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a - wd) * 1500, cy + Math.sin(a - wd) * 1500); ctx.lineTo(cx + Math.cos(a + wd) * 1500, cy + Math.sin(a + wd) * 1500); ctx.fill();
+    }
+    const g2 = ctx.createRadialGradient(W / 2, H * 0.5, 80, W / 2, H * 0.5, 760);
+    g2.addColorStop(0, `rgba(255,190,90,${0.2 * r})`); g2.addColorStop(1, 'rgba(255,190,90,0)');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+
+  // vinheta: escura sempre, vermelha pulsando com o coração na pressão
+  const v = ctx.createRadialGradient(W / 2, H / 2, 380 - 60 * p, W / 2, H / 2, 820);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${0.35 + 0.2 * p - 0.15 * r})`);
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  if (p > 0.02) {
+    const rv = ctx.createRadialGradient(W / 2, H / 2, 380 - 150 * p, W / 2, H / 2, 780);
+    rv.addColorStop(0, 'rgba(255,20,60,0)'); rv.addColorStop(1, `rgba(255,20,60,${p * (0.14 + 0.5 * b)})`);
+    ctx.fillStyle = rv; ctx.fillRect(0, 0, W, H);
+  }
+
+  // paredes fechando (a cada batida apertam mais um pouco)
+  const wall = p * (1 + 0.1 * b), wx = W * 0.11 * wall, wy = H * 0.075 * wall;
+  if (wall > 0.01) {
+    ctx.fillStyle = '#020207';
+    ctx.fillRect(0, 0, wx, H); ctx.fillRect(W - wx, 0, wx, H); ctx.fillRect(0, 0, W, wy);
+    ctx.fillStyle = `rgba(255,59,92,${0.35 + 0.65 * b})`;
+    ctx.fillRect(wx - 4, 0, 4, H); ctx.fillRect(W - wx, 0, 4, H); ctx.fillRect(0, wy - 4, W, 4);
+  }
+
+  // partículas do alívio: confete caindo e poeira de luz subindo
+  if (r > 0.02 && since > -0.2) {
+    const COL = ['#ffd257', '#fff3c4', '#ffb347', '#7c8cff', '#ffffff'];
+    for (let i = 0; i < 70; i++) {
+      const sp = 0.1 + hash(i) * 0.13, u = mod(hash(i + 50) * 1.2 + Math.max(0, since) * sp, 1.2) - 0.1;
+      const x = hash(i + 200) * W + Math.sin(t * (1 + hash(i + 9)) + i) * 36, s = 9 + Math.floor(hash(i + 70) * 3) * 4;
+      const flip = Math.abs(Math.cos(t * (2 + hash(i + 31) * 3) + i));
+      ctx.globalAlpha = r * clamp(since / 0.4 + 0.2) * 0.9; ctx.fillStyle = COL[i % COL.length];
+      ctx.fillRect(Math.round(x - s * flip / 2), Math.round(u * (H - 170)), Math.max(3, s * flip), s);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 36; i++) {
+      const u = mod(hash(i + 400) - t * (0.04 + hash(i + 410) * 0.05), 1), x = hash(i + 420) * W + Math.sin(t * .7 + i) * 24;
+      ctx.globalAlpha = r * 0.55 * Math.sin(u * Math.PI); ctx.fillStyle = '#ffe9a8';
+      const s = 4 + (i % 3) * 2; ctx.fillRect(x, u * (H - 170), s, s);
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  // HUD
+  drawClock(t, p); drawStress(t, p); drawWins(t);
+  caption('SÓ MAIS UMA NOITE...', win(t, 0.9, 3.3), '#cfd6ff');
+  caption('AGUENTA. CONTINUA.', win(t, 4.6, 6.9, .25), '#ff5f7a');
+  caption('VALEU CADA NOITE.', win(t, 9.0, 13.2, .5), '#ffd257');
+  caption('PRÓXIMO DESAFIO >>', win(t, 14.0, 15.35, .25), '#9fb4ff');
+  drawEcg(t);
+
+  // scanlines sutis
+  ctx.fillStyle = 'rgba(0,0,0,.10)';
+  for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 2);
+
+  // a virada: pressão acumula num clarão, onda de choque solta tudo
+  const pre = clamp((t - (TR - 0.45)) / 0.45) * (since < 0 ? 1 : 0);
+  const flash = since >= 0 ? Math.pow(clamp(1 - since / 0.7), 2) : pre * pre * 0.85;
+  if (flash > 0.003) { ctx.fillStyle = `rgba(255,244,214,${flash})`; ctx.fillRect(0, 0, W, H); }
+  if (since > 0 && since < 1.1) {
+    for (let i = 0; i < 2; i++) {
+      const s2 = since - i * 0.16; if (s2 <= 0) continue;
+      ctx.strokeStyle = `rgba(255,226,150,${clamp(1 - s2 / 0.9) * 0.8})`; ctx.lineWidth = 18 * clamp(1 - s2 / 0.9) + 2;
+      ctx.beginPath(); ctx.arc(W / 2, H * 0.52, 60 + (1 - Math.pow(1 - clamp(s2 / 0.9), 3)) * 900, 0, 7); ctx.stroke();
+    }
+  }
+  // chicote de volta ao começo: o loop recomeça
+  const whip = win(t, 15.3, 16.02, .3);
+  if (whip > 0) { ctx.fillStyle = `rgba(10,14,40,${whip * 0.35})`; ctx.fillRect(0, 0, W, H); }
+}
+
+window.DURATION = T;
+window.ready = Promise.all([sheet.decode(), document.fonts.load(font(16))]).then(() => {
+  window.renderAt = render;
+  if (!new URLSearchParams(location.search).has('export')) {
+    const t0 = performance.now();
+    (function loop(now) { render((now - t0) / 1000); requestAnimationFrame(loop); })(t0);
+  }
+});
+</script>
+</body>
+</html>
