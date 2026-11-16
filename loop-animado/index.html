@@ -321,8 +321,15 @@ window.DURATION = T;
 window.ready = Promise.all([sheet.decode(), document.fonts.load(font(16))]).then(() => {
   window.renderAt = render;
   if (!new URLSearchParams(location.search).has('export')) {
-    const t0 = performance.now();
-    (function loop(now) { render((now - t0) / 1000); requestAnimationFrame(loop); })(t0);
+    // clique liga/desliga o som; com som ligado, a imagem segue o relógio do áudio
+    const audio = new Audio('assets/trilha.m4a'); audio.loop = true;
+    let t0 = performance.now();
+    cv.title = 'Clique para ligar o som'; cv.style.cursor = 'pointer';
+    cv.addEventListener('click', () => {
+      if (audio.paused) { audio.currentTime = ((performance.now() - t0) / 1000) % T; audio.play(); }
+      else { t0 = performance.now() - audio.currentTime * 1000; audio.pause(); }
+    });
+    (function loop(now) { render(audio.paused ? (now - t0) / 1000 : audio.currentTime); requestAnimationFrame(loop); })(t0);
   }
 });
 </script>
