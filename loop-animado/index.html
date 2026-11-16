@@ -75,13 +75,26 @@ function ecg(u) {                      // um batimento, u em 0..1
   return 0.12 * g(0.18, 0.04) - 0.18 * g(0.29, 0.012) + 1.0 * g(0.32, 0.014) - 0.3 * g(0.35, 0.013) + 0.22 * g(0.55, 0.06);
 }
 
-/* ---------- cena: órbita com motion blur ---------- */
-function drawPair(g, f, off) {
-  const i = Math.floor(f), e = f - i, D = W * 0.42;
-  const src = k => [mod(k, NF) * FW, 0, FW, FH];
+/* ---------- cena: giro tipo plataforma giratória ----------
+   O fundo varre de lado com borrão (o mundo gira), enquanto o personagem e a
+   base ficam presos no centro e só "viram" de um ângulo para o outro. */
+const src = k => [mod(k, NF) * FW, 0, FW, FH];
+const mask = mk(), mx = mask.getContext('2d');           // onde fica o personagem + a base
+(function () {
+  const blob = (cx, cy, rx, ry, inner) => {
+    mx.save(); mx.translate(cx, cy); mx.scale(rx, ry);
+    const g = mx.createRadialGradient(0, 0, inner, 0, 0, 1);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    mx.fillStyle = g; mx.fillRect(-1, -1, 2, 2); mx.restore();
+  };
+  blob(W * 0.54, H * 0.56, W * 0.40, H * 0.46, 0.5);
+  blob(W * 0.50, H * 0.90, W * 0.60, H * 0.15, 0.6);
+})();
+const sub = mk(), sbx = sub.getContext('2d'); sbx.imageSmoothingEnabled = false;
+
+function drawBackdrop(g, i, k, off) {                    // fundo deslizando: sai pela direita, entra pela esquerda
+  const D = W * 0.55, xo = k * D + off, xi = -(1 - k) * D + off;
   g.globalAlpha = 1;
-  if (e < 0.001) { g.drawImage(sheet, ...src(i), off, 0, W, H); return; }
-  const k = smooth(e), xo = k * D + off, xi = -(1 - k) * D + off;
   g.drawImage(sheet, ...src(i + 1), xi, 0, W, H);
   g.drawImage(sheet, ...src(i), xo, 0, W, H);
   g.globalAlpha = k;
@@ -90,15 +103,28 @@ function drawPair(g, f, off) {
 }
 function drawScene(t) {
   const f = orbit(t), vel = (orbit(Math.min(T, t + 0.02)) - orbit(Math.max(0, t - 0.02))) / 0.04;
-  const blur = Math.min(70, Math.abs(vel) * 32), n = blur > 3 ? 9 : 1;
+  const i = Math.floor(f), e = f - i;
   scx.globalAlpha = 1; scx.fillStyle = '#05060d'; scx.fillRect(0, 0, W, H);
-  for (let k = 0; k < n; k++) {
-    drawPair(tx, f, n > 1 ? (k / (n - 1) - 0.5) * blur : 0);
-    scx.globalAlpha = 1 / (k + 1);
+  if (e < 0.001) { scx.drawImage(sheet, ...src(i), 0, 0, W, H); return { f, vel }; }
+  // 1) fundo com borrão horizontal proporcional à velocidade
+  const blur = Math.min(120, 30 + Math.abs(vel) * 45), n = 13, k = smooth(e);
+  for (let j = 0; j < n; j++) {
+    drawBackdrop(tx, i, k, (j / (n - 1) - 0.5) * blur);
+    scx.globalAlpha = 1 / (j + 1);
     scx.drawImage(tmp, 0, 0);
   }
   scx.globalAlpha = 1;
-  return { f, vel, blur };
+  // 2) personagem preso no centro: estreita no meio da virada (como algo girando) e troca de ângulo
+  const turn = smooth(clamp((e - 0.2) / 0.6)), squash = 1 - 0.16 * Math.sin(Math.PI * e);
+  const cx = W * 0.54, lean = (0.5 - turn) * 26 * Math.sin(Math.PI * e);
+  sbx.globalCompositeOperation = 'source-over'; sbx.clearRect(0, 0, W, H);
+  sbx.save(); sbx.translate(cx + lean, 0); sbx.scale(squash, 1); sbx.translate(-cx, 0);
+  sbx.globalAlpha = 1; sbx.drawImage(sheet, ...src(i), 0, 0, W, H);
+  sbx.globalAlpha = turn; sbx.drawImage(sheet, ...src(i + 1), 0, 0, W, H);
+  sbx.restore();
+  sbx.globalAlpha = 1; sbx.globalCompositeOperation = 'destination-in'; sbx.drawImage(mask, 0, 0);
+  scx.drawImage(sub, 0, 0);
+  return { f, vel };
 }
 
 /* ---------- HUD ---------- */
@@ -199,12 +225,12 @@ function drawEcg(t) {
 /* ---------- quadro ---------- */
 function render(t) {
   t = mod(t, T);
-  const p = P(t), r = R(t), b = beat(t), { blur } = drawScene(t);
+  const p = P(t), r = R(t), b = beat(t); drawScene(t);
   const since = t - TR, tick = Math.floor(t * 30);
 
   // câmera: aperta na pressão (zoom + tremor), respira no alívio
   const breath = Math.sin(t * Math.PI * 0.5) * 0.006 * r;
-  const zoom = 1.085 + 0.2 * p * p + b * 0.012 * p + breath + Math.max(0, 0.06 * (1 - since / 0.5)) * (since > 0 ? 1 : 0);
+  const zoom = 1.1 + 0.2 * p * p + b * 0.012 * p + breath + Math.max(0, 0.06 * (1 - since / 0.5)) * (since > 0 ? 1 : 0);
   const sh = 11 * p * p * p, sx = (hash(tick) - .5) * sh * 2, sy = (hash(tick + 99) - .5) * sh * 2;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -230,7 +256,7 @@ function render(t) {
   }
   // bloom quente no alívio
   if (r > 0.02) {
-    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.42 * r; ctx.filter = 'blur(22px) brightness(1.25)';
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.22 * r; ctx.filter = 'blur(22px) brightness(1.15)';
     ctx.drawImage(sc, 0, 0); ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
   ctx.restore();
@@ -239,15 +265,15 @@ function render(t) {
   if (r > 0.02) {
     ctx.save(); ctx.globalCompositeOperation = 'screen';
     const cx = W / 2, cy = -160;
-    for (let i = 0; i < 9; i++) {
-      const a = Math.PI / 2 + (i - 4) * 0.2 + Math.sin(t * 0.5 + i * 1.7) * 0.06, wd = 0.035 + hash(i) * 0.04;
+    for (let i = 0; i < 7; i++) {
+      const a = Math.PI / 2 + (i - 3) * 0.26 + Math.sin(t * 0.5 + i * 1.7) * 0.06, wd = 0.035 + hash(i) * 0.04;
       const gr = ctx.createLinearGradient(cx, cy, cx + Math.cos(a) * 1300, cy + Math.sin(a) * 1300);
-      gr.addColorStop(0, `rgba(255,214,120,${0.26 * r})`); gr.addColorStop(1, 'rgba(255,214,120,0)');
+      gr.addColorStop(0, `rgba(255,214,120,${0.075 * r})`); gr.addColorStop(1, 'rgba(255,214,120,0)');
       ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(cx, cy);
       ctx.lineTo(cx + Math.cos(a - wd) * 1500, cy + Math.sin(a - wd) * 1500); ctx.lineTo(cx + Math.cos(a + wd) * 1500, cy + Math.sin(a + wd) * 1500); ctx.fill();
     }
     const g2 = ctx.createRadialGradient(W / 2, H * 0.5, 80, W / 2, H * 0.5, 760);
-    g2.addColorStop(0, `rgba(255,190,90,${0.2 * r})`); g2.addColorStop(1, 'rgba(255,190,90,0)');
+    g2.addColorStop(0, `rgba(255,190,90,${0.09 * r})`); g2.addColorStop(1, 'rgba(255,190,90,0)');
     ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H); ctx.restore();
   }
 

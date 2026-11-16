@@ -1,9 +1,10 @@
 // Exporta a animação quadro a quadro e monta o MP4.
 // Uso: node export.mjs [pasta-de-quadros] [saida.mp4]   (requer playwright + ffmpeg)
+// Para ver quadros soltos: ONLY=5.7,8.5 node export.mjs pasta   (tempos em segundos)
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');   // resolve também instalação global (NODE_PATH)
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -25,7 +26,8 @@ for (const i of only ? only.map(s => Math.round(s * FPS)) : [...Array(total).key
 }
 await browser.close();
 if (!only) {
+  const trilha = path.join(here, 'assets', 'trilha.m4a');     // gerada por gerar_trilha.py
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, 'f%04d.png'),
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', '-preset', 'slow', '-movflags', '+faststart', out]);
+    ...(existsSync(trilha) ? ['-i', trilha, '-c:a', 'copy', '-shortest'] : []), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', '-preset', 'slow', '-movflags', '+faststart', out]);
   console.log('ok', out);
 }
