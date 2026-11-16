@@ -152,15 +152,15 @@ function card(x, y, w, h, text, col, a, icon) {
   ctx.fillStyle = '#f2f3ff'; txt(text, x + 66, y + h / 2 - 6, 15);
   ctx.restore();
 }
-const STRESS = [[0.5,'PRAZO: AMANHÃ 23:59'],[1.2,'BUILD FALHOU · 3 ERROS'],[1.9,'PROVA EM 2 DIAS'],[2.5,'BUG #47 REABERTO'],
-                [3.0,'"CADÊ A ENTREGA?"'],[3.5,'SONO: 3H · CAFÉ: 0%'],[4.3,'12 TAREFAS ATRASADAS']];
+const STRESS = [[2.0,'PRAZO: AMANHÃ 23:59'],[3.6,'BUILD FALHOU · 3 ERROS'],[4.5,'PROVA EM 2 DIAS'],[5.2,'BUG #47 REABERTO'],
+                [5.8,'"CADÊ A ENTREGA?"'],[6.4,'SONO: 3H · CAFÉ: 0%'],[6.9,'12 TAREFAS ATRASADAS']];
 const WINS = [[9.1,'PROJETO ENTREGUE'],[9.7,'BUILD PASSOU'],[10.3,'DIPLOMA CONQUISTADO']];
 
 function drawStress(t, p) {
   const w = 430, h = 60;
   STRESS.forEach(([t0, text], i) => {
     if (t < t0) return;
-    const k = clamp((t - t0) / 0.35), rel = t - (7.25 + i * 0.13);      // rel > 0: sendo soprado embora
+    const k = clamp((t - t0) / 0.35), rel = t - (7.7 + i * 0.1);      // rel > 0: sendo soprado embora
     let x = W - 40 - w + (1 - outBack(k)) * 520, y = 44 + i * (h + 12), a = 1, rot = 0;
     const j = p * p * 5; x += (hash(i * 7 + Math.floor(t * 30)) - .5) * j; y += (hash(i * 13 + Math.floor(t * 30)) - .5) * j;
     if (rel > 0) { x += rel * rel * 2600; y -= rel * 260 * (hash(i) - .2); rot = rel * (hash(i + 5) - .3) * 2.2; a = clamp(1 - rel / 0.55); }
