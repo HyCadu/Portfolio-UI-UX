@@ -28,6 +28,6 @@ await browser.close();
 if (!only) {
   const trilha = path.join(here, 'assets', 'trilha.m4a');     // gerada por gerar_trilha.py
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, 'f%04d.png'),
-    ...(existsSync(trilha) ? ['-i', trilha, '-c:a', 'copy', '-shortest'] : []), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', '-preset', 'slow', '-movflags', '+faststart', out]);
+    ...(existsSync(trilha) ? ['-i', trilha, '-c:a', 'copy'] : []), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '23', '-preset', 'slow', '-movflags', '+faststart', out]);
   console.log('ok', out);
 }
